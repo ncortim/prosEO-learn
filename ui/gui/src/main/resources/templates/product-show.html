@@ -369,9 +369,12 @@
 												</tr>
 												<tr>
 													<td class="tr-rowspan"><span>&nbsp;</span></td>
-													<td colspan="6"><a
+													<td colspan="6"><span
 														th:each="comp : ${file?.auxFileNames}"
-														class="proseo-list-item"><span th:text="${comp}"></span></a></td>
+														class="proseo-list-item">
+                            <a th:href="'/productfile/download?productId=' + ${elem?.id} + '&amp;filePath=' + ${file?.filePath} + '&amp;fileName=' + ${comp} + '&amp;facilityName=' + ${file?.processingFacilityName}"
+                              type="application/octet-stream"
+                              th:download="${comp}"><span th:text="${comp}"></span></a></span></td>
 												</tr>
 											</div>
 										</tbody>

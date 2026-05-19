@@ -22,6 +22,9 @@ all:
     worker5:
       ansible_host: 10.x.x.25
       ip: 10.x.x.25
+    loghost:
+      ansible_host: 10.x.x.25
+      ip: 10.x.x.25
   children:
     bastion:
       hosts:

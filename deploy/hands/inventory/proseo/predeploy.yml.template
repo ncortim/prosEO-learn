@@ -1,93 +1,26 @@
 ---
-# Configure basic network settings before deploying Kubernetes
+- name: Configure basic network settings before deploying Kubernetes
+  hosts: k8s_cluster
+  become: true
 
-- hosts: k8s_cluster
+  roles:
+    - configure_dnf_automatic
+    - configure_ntp
+    - prepare_log_collection
+
   tasks:
+    - name: Set default route
+      command: ip route replace default via 10.x.x.x
+      changed_when: false
 
-  - name: Set default route
-    shell: ip route replace default via 10.x.x.x
+    - name: Set DNS resolution
+      lineinfile:
+        path: /etc/resolv.conf
+        regexp: '^nameserver'
+        line: 'nameserver 8.8.8.8'
+        insertbefore: BOF
 
-  - name: Set DNS resolution
-    lineinfile:
-      path: /etc/resolv.conf
-      regexp: '^nameserver'
-      line: nameserver 8.8.8.8
-      insertbefore: BOF
-
-  - name: disable firewalld
-    service:
-      name: firewalld
-      state: stopped
-      enabled: no
-
-  - name: Install NFS client
-    yum:
-      name: nfs-utils
-      state: present
-
-  - name: Configure chrony
-    copy:
-      dest: /etc/chrony.conf
-      owner: root
-      group: root
-      mode: '0644'
-      content: |
-        {% for server in ntp_servers %}
-        server {{ server }} iburst
-        {% endfor %}
-
-        driftfile /var/lib/chrony/drift
-        rtcsync
-        makestep 1.0 3
-        logdir /var/log/chrony
-    register: chrony_conf
-    vars:
-      ntp_servers:
-        - 0.pool.ntp.org
-        - 1.pool.ntp.org
-        - 2.pool.ntp.org
-        - 3.pool.ntp.org
-
-  - name: Restart chronyd if config changed
-    service:
-      name: chronyd
-      state: restarted
-    when: chrony_conf.changed
-
-  - name: Install dnf-automatic
-    ansible.builtin.dnf:
-      name: dnf-automatic
-      state: present
-
-  - name: Configure dnf-automatic
-    ansible.builtin.copy:
-      dest: /etc/dnf/automatic.conf
-      owner: root
-      group: root
-      mode: "0644"
-      content: |
-        [commands]
-        upgrade_type = default
-        download_updates = yes
-        apply_updates = yes
-        reboot = no
-
-        [emitters]
-        emit_via = stdio
-
-        [base]
-        debuglevel = 1
-    notify:
-      - restart dnf-automatic timer
-
-  - name: Enable dnf automatic install timer
-    ansible.builtin.systemd:
-      name: dnf-automatic-install.timer
-      enabled: true
-      state: started
-
-  handlers:
-    - name: restart dnf-automatic timer
-      ansible.builtin.systemd:
-        name: dnf-automatic-install.timer
-        state: restarted
+    - name: Install NFS client
+      dnf:
+        name: nfs-utils
+        state: present

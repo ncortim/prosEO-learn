@@ -16,7 +16,7 @@
   - configure_dnf_automatic
   
 # Mount transfer directory on bastion host
-- hosts: bastion_control
+- hosts: bastion_control[0]
   remote_user: proseoadmin
 
   tasks:

@@ -66,6 +66,7 @@ import de.dlr.proseo.api.basemon.TransferObject;
 import de.dlr.proseo.basewrap.MD5Util;
 import de.dlr.proseo.logging.logger.ProseoLogger;
 import de.dlr.proseo.logging.messages.ApiMonitorMessage;
+import de.dlr.proseo.logging.messages.GeneralMessage;
 import de.dlr.proseo.logging.messages.OAuthMessage;
 import de.dlr.proseo.model.util.OrbitTimeFormatter;
 import de.dlr.proseo.model.util.ProseoUtil;
@@ -104,7 +105,7 @@ public class AuxipMonitor extends BaseMonitor {
 	private static final int MAX_RETRY = 40;
 	// Wait interval in ms before retrying database operation
 	public static final int AUXIP_WAIT = 1000;
-	
+
 	/**
 	 * Class describing a download session
 	 */
@@ -699,8 +700,8 @@ public class AuxipMonitor extends BaseMonitor {
 				}
 
 				// Create retrieval request
-				String requestUri = config.getAuxipBaseUri() + "/" 
-						+ (config.getAuxipContext().isBlank() ? "" : config.getAuxipContext() + "/") 
+				String requestUri = config.getAuxipBaseUri() + "/"
+						+ (config.getAuxipContext().isBlank() ? "" : config.getAuxipContext() + "/")
 						+ "odata/v1/Products(" + transferProduct.getUuid() + ")" + "/$value";
 
 				ConnectionConfig connectionConfig = ConnectionConfig.custom()
@@ -711,112 +712,121 @@ public class AuxipMonitor extends BaseMonitor {
 				        PoolingHttpClientConnectionManagerBuilder.create()
 				            .setDefaultConnectionConfig(connectionConfig)
 				            .build();
-				
+
 				RequestConfig requestConfig = RequestConfig.custom()
 						.setConnectionRequestTimeout(config.getAuxipChunkTimeout(), TimeUnit.MILLISECONDS)
 						.setResponseTimeout(config.getAuxipChunkTimeout(), TimeUnit.MILLISECONDS)
 						.build();
 
 				File productFile = new File(config.getAuxipDirectoryPath() + File.separator + transferProduct.getName());
-				
+
 				Instant copyStart = Instant.now();
-				for (int i = 0; i < MAX_RETRY; i++) {
-					try (CloseableHttpClient httpClient = HttpClients.custom()
-							.setDefaultRequestConfig(requestConfig)
-							.setConnectionManager(connectionManager).build()) {
 
-						logger.trace("... starting {}. request for URL '{}'", i + 1, requestUri);
+				try (CloseableHttpClient httpClient = HttpClients.custom()
+					.setDefaultRequestConfig(requestConfig)
+					.setConnectionManager(connectionManager)
+					.build()) {
 
-						ClassicHttpRequest httpGet = new HttpGet(requestUri);
-						
-						if (config.getAuxipUseToken()) {
-							httpGet.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + getBearerToken());
-						} else {
-							httpGet.setHeader(HttpHeaders.AUTHORIZATION, "Basic "
-									+ Base64.getEncoder().encodeToString((config.getAuxipUser() + ":" + config.getAuxipPassword()).getBytes()));
-						}
+					for (int i = 0; i < MAX_RETRY; i++) {
+						try {
 
-						ClassicHttpResponse httpResponse = httpClient.execute(httpGet, response -> { return response; });
-						HttpEntity httpEntity = httpResponse.getEntity();
+							logger.trace("... starting {}. request for URL '{}'", i + 1, requestUri);
 
-						if (httpEntity != null) {
-							FileUtils.copyInputStreamToFile(httpEntity.getContent(), productFile);
-						}
+							ClassicHttpRequest httpGet = new HttpGet(requestUri);
 
-						httpResponse.close();
-						
-						Boolean success = true;
-						// Compare file size with value given by AUXIP
-						Long productFileLength = productFile.length();
-						if (!productFileLength.equals(transferProduct.getSize())) {
-							logger.log(ApiMonitorMessage.FILE_SIZE_MISMATCH,
-									transferProduct.getIdentifier(), transferProduct.getSize(), productFileLength);
-							success = false;
-						}
-						if (success) {
-							// Record the performance for files of sufficient size
-							Duration copyDuration = Duration.between(copyStart, Instant.now());
-							Double copyPerformance = productFileLength / // Bytes
-									(copyDuration.toNanos() / 1000000000.0) // seconds (with fraction)
-									/ (1024 * 1024); // --> MiB/s
-
-							if (config.getAuxipPerformanceMinSize() < productFileLength) {
-								setLastCopyPerformance(copyPerformance);
+							if (config.getAuxipUseToken()) {
+								httpGet.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + getBearerToken());
+							} else {
+								httpGet.setHeader(HttpHeaders.AUTHORIZATION, "Basic " + Base64.getEncoder()
+									.encodeToString((config.getAuxipUser() + ":" + config.getAuxipPassword()).getBytes()));
 							}
 
-							// Compute checksum and compare with value given by AUXIP
-							String md5Hash = MD5Util.md5Digest(productFile);
-							if (!md5Hash.equalsIgnoreCase(transferProduct.checksum)) {
-								logger.log(ApiMonitorMessage.CHECKSUM_MISMATCH, transferProduct.getIdentifier(),
-										transferProduct.getChecksum(), md5Hash);
+							httpClient.execute(httpGet, response -> {
+								HttpEntity entity = response.getEntity();
+
+								if (entity != null) {
+									FileUtils.copyInputStreamToFile(entity.getContent(), productFile);
+								}
+
+								return null;
+							});
+
+							Boolean success = true;
+							// Compare file size with value given by AUXIP
+							Long productFileLength = productFile.length();
+							if (!productFileLength.equals(transferProduct.getSize())) {
+								logger.log(ApiMonitorMessage.FILE_SIZE_MISMATCH, transferProduct.getIdentifier(),
+										transferProduct.getSize(), productFileLength);
 								success = false;
 							}
-						}
-						if (success) {
-							// Log download with UUID, file name, size, checksum, publication date (request by ESA)
-							logger.log(ApiMonitorMessage.PRODUCT_TRANSFER_COMPLETED,
-									transferProduct.getIdentifier(), transferProduct.getName(), transferProduct.getSize(),
-									transferProduct.getChecksum(), transferProduct.getPublicationTime().toString());
-							break;
-						} else {
-							if (productFile != null && productFile.exists()) {
-								productFile.delete();
+							if (success) {
+								// Record the performance for files of sufficient size
+								Duration copyDuration = Duration.between(copyStart, Instant.now());
+								Double copyPerformance = productFileLength / // Bytes
+										(copyDuration.toNanos() / 1000000000.0) // seconds (with fraction)
+										/ (1024 * 1024); // --> MiB/s
+
+								if (config.getAuxipPerformanceMinSize() < productFileLength) {
+									setLastCopyPerformance(copyPerformance);
+								}
+
+								// Compute checksum and compare with value given by AUXIP
+								String md5Hash = MD5Util.md5Digest(productFile);
+								if (!md5Hash.equalsIgnoreCase(transferProduct.checksum)) {
+									logger.log(ApiMonitorMessage.CHECKSUM_MISMATCH, transferProduct.getIdentifier(),
+											transferProduct.getChecksum(), md5Hash);
+									success = false;
+								}
+							}
+							if (success) {
+								// Log download with UUID, file name, size, checksum, publication date (request by ESA)
+								logger.log(ApiMonitorMessage.PRODUCT_TRANSFER_COMPLETED, transferProduct.getIdentifier(),
+										transferProduct.getName(), transferProduct.getSize(), transferProduct.getChecksum(),
+										transferProduct.getPublicationTime().toString());
+								break;
+							} else {
+								if (productFile != null && productFile.exists()) {
+									productFile.delete();
+								}
+							}
+							if ((i + 1) < MAX_RETRY) {
+								ProseoUtil.randomWait(i, AUXIP_WAIT);
+							} else {
+								logger.log(ApiMonitorMessage.PRODUCT_DOWNLOAD_FAILED_AFTER_RETRIES, transferProduct.getName(),
+										MAX_RETRY, MSG_MAX_RETRIES_REACHED);
+								return false;
+							}
+						} catch (FileNotFoundException e) {
+							logger.log(ApiMonitorMessage.FILE_NOT_WRITABLE, productFile.toString());
+							if ((i + 1) < MAX_RETRY) {
+								// retry
+								ProseoUtil.randomWait(i, AUXIP_WAIT);
+							} else {
+								return false;
+							}
+						} catch (HttpResponseException e) {
+							logger.log(ApiMonitorMessage.PRODUCT_DOWNLOAD_FAILED, transferProduct.getName(),
+									e.getMessage() + " / " + e.getReasonPhrase());
+							if ((i + 1) < MAX_RETRY) {
+								// retry
+								ProseoUtil.randomWait(i, AUXIP_WAIT);
+							} else {
+								return false;
+							}
+						} catch (Exception e) {
+							logger.log(ApiMonitorMessage.PRODUCT_DOWNLOAD_FAILED_AFTER_RETRIES, transferProduct.getName(), (i + 1),
+									e.getClass().getName() + " / " + e.getMessage());
+							if ((i + 1) < MAX_RETRY) {
+								// retry
+								ProseoUtil.randomWait(i, AUXIP_WAIT);
+							} else {
+								return false;
 							}
 						}
-						if ((i + 1) < MAX_RETRY) {
-							ProseoUtil.randomWait(i, AUXIP_WAIT);
-						} else {
-							logger.log(ApiMonitorMessage.PRODUCT_DOWNLOAD_FAILED_AFTER_RETRIES, transferProduct.getName(),
-									MAX_RETRY, MSG_MAX_RETRIES_REACHED);
-							return false;
-						}
-					} catch (FileNotFoundException e) {
-						logger.log(ApiMonitorMessage.FILE_NOT_WRITABLE, productFile.toString());
-						if ((i + 1) < MAX_RETRY) {
-							// retry
-							ProseoUtil.randomWait(i, AUXIP_WAIT);
-						} else {						
-							return false;
-						}
-					} catch (HttpResponseException e) {
-						logger.log(ApiMonitorMessage.PRODUCT_DOWNLOAD_FAILED,
-								transferProduct.getName(), e.getMessage() + " / " + e.getReasonPhrase());
-						if ((i + 1) < MAX_RETRY) {
-							// retry
-							ProseoUtil.randomWait(i, AUXIP_WAIT);
-						} else {
-							return false;
-						}
-					} catch (Exception e) {
-						logger.log(ApiMonitorMessage.PRODUCT_DOWNLOAD_FAILED_AFTER_RETRIES, transferProduct.getName(),
-								(i + 1), e.getClass().getName() + " / " + e.getMessage());
-						if ((i + 1) < MAX_RETRY) {
-							// retry
-							ProseoUtil.randomWait(i, AUXIP_WAIT);
-						} else {
-							return false;
-						}
 					}
+
+				} catch (Exception e) {
+					logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED, e);
 				}
 
 				return true;

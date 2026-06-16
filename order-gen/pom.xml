@@ -5,7 +5,7 @@
     <artifactId>proseo</artifactId>
     <version>2.1.1</version>
   </parent>
-  <artifactId>order-gen</artifactId>
+  <artifactId>proseo-order-gen</artifactId>
   <name>prosEO Order Generator</name>
   <description>prosEO Order Generator – automatic event or timer driven generation of processing orders</description>
   

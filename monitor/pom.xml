@@ -19,7 +19,7 @@
 	</organization>
 
 	<properties>
-		<kubernetes.client.version>12.0.1</kubernetes.client.version>
+		<kubernetes.client.version>20.0.1-legacy</kubernetes.client.version>
 		<main.basedir>${basedir}/../..</main.basedir>
 		<raml-path>src/main/resources/raml/monitor-api.raml</raml-path>
 		<raml-base-package>de.dlr.proseo.monitor.rest</raml-base-package>

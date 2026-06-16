@@ -41,8 +41,8 @@
 		<spring-boot-starter-test.version>3.5.14</spring-boot-starter-test.version> <!-- Not in parent POM! -->
 		
 		<!-- Version freezing addressing security vulnerabilities - REMOVE when upgrading Spring Boot! -->
-    <tomcat.version>10.1.55</tomcat.version><!-- Addresses CVE-2026-43515 -->
-		<netty.version>4.1.133.Final</netty.version>
+        <tomcat.version>10.1.55</tomcat.version><!-- Addresses CVE-2026-43515 -->
+		<netty.version>4.1.135.Final</netty.version><!-- Addresses CVE-2026-45674 -->
 	</properties>
 
 	<modules>

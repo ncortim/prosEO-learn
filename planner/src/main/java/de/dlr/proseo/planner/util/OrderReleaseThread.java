@@ -144,7 +144,7 @@ public class OrderReleaseThread extends Thread {
 								}
 
 								lambdaOrder.setOrderState(OrderState.PLANNED);
-								UtilService.getOrderUtil().setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_QUEUED);
+								UtilService.getOrderUtil().setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_QUEUED);
 								lambdaOrder = RepositoryService.getOrderRepository().save(lambdaOrder);
 
 								return null;
@@ -181,7 +181,7 @@ public class OrderReleaseThread extends Thread {
 							}
 
 							lambdaOrder.setOrderState(OrderState.PLANNED);
-							UtilService.getOrderUtil().setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_QUEUED);
+							UtilService.getOrderUtil().setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_QUEUED);
 							lambdaOrder = RepositoryService.getOrderRepository().save(lambdaOrder);
 
 							return null;
@@ -330,6 +330,7 @@ public class OrderReleaseThread extends Thread {
 							break;
 						}
 					}
+					List<Object> jobStepList = new ArrayList<Object>();
 					// Prepare for transaction retry, if "org.springframework.dao.CannotAcquireLockException" is thrown
 					for (int i = 0; i < ProseoUtil.DB_MAX_RETRY; i++) {
 						try {
@@ -346,58 +347,11 @@ public class OrderReleaseThread extends Thread {
 										+ "WHERE o.id = :orderId " + "AND js.job_step_state = :jsState "
 										+ "ORDER BY js.priority desc, j.start_time, js.id";
 
-								List<?> jobStepList = em.createNativeQuery(nativeQuery)
+								List<?> jobStepListLoc = em.createNativeQuery(nativeQuery)
 									.setParameter("orderId", orderId)
 									.setParameter("jsState", JobStepState.READY.toString())
 									.getResultList();
-
-								for (Object jobStepObject : jobStepList) {
-									if (jobStepObject instanceof Object[]) {
-
-										Object[] jobStep = (Object[]) jobStepObject;
-
-										if (logger.isTraceEnabled())
-											logger.trace("... found job step info {}", Arrays.asList(jobStep));
-
-										// jobStep[0] is only used for ordering the result list
-										Object jsIdObject = jobStep[1];
-										Object pfNameObject = jobStep[2];
-
-										Long jsId = jsIdObject instanceof BigInteger 
-												? ((BigInteger) jsIdObject).longValue() 
-												: (jsIdObject instanceof Long ? (Long)jsIdObject : null);
-										String pfName = pfNameObject instanceof String ? (String) pfNameObject : null;
-
-										if (null == jsId || null == pfName) {
-											logger.log(GeneralMessage.RUNTIME_EXCEPTION_ENCOUNTERED,
-													"Invalid query result: " + Arrays.asList(jobStep));
-
-											throw new RuntimeException("Invalid query result");
-										}
-
-										try {
-											KubeConfig kc = productionPlanner.getKubeConfig(pfName);
-
-											if (kc == null || !kc.couldJobRun(null)) {
-												break;
-											}
-
-											UtilService.getJobStepUtil().checkJobStepToRun(kc, jsId);
-										} catch (Exception e) {
-											if (logger.isDebugEnabled())
-												logger.debug("... exception in checkJobStepToRun(" + pfName + ", " + jsId + "): ",
-														e);
-
-											logger.log(GeneralMessage.RUNTIME_EXCEPTION_ENCOUNTERED, e.getMessage());
-											throw e;
-										}
-
-									} else {
-										logger.log(GeneralMessage.RUNTIME_EXCEPTION_ENCOUNTERED,
-												"Invalid query result: " + jobStepObject);
-										throw new RuntimeException("Invalid query result");
-									}
-								}
+								jobStepList.addAll(jobStepListLoc);
 
 								return null;
 							});
@@ -417,6 +371,53 @@ public class OrderReleaseThread extends Thread {
 							if (logger.isDebugEnabled())
 								logger.debug("... exception in release::doInTransaction2(" + orderId + "): ", e);
 							throw e;
+						}
+					}
+					for (Object jobStepObject : jobStepList) {
+						if (jobStepObject instanceof Object[]) {
+
+							Object[] jobStep = (Object[]) jobStepObject;
+
+							if (logger.isTraceEnabled())
+								logger.trace("... found job step info {}", Arrays.asList(jobStep));
+
+							// jobStep[0] is only used for ordering the result list
+							Object jsIdObject = jobStep[1];
+							Object pfNameObject = jobStep[2];
+
+							Long jsId = jsIdObject instanceof BigInteger 
+									? ((BigInteger) jsIdObject).longValue() 
+									: (jsIdObject instanceof Long ? (Long)jsIdObject : null);
+							String pfName = pfNameObject instanceof String ? (String) pfNameObject : null;
+
+							if (null == jsId || null == pfName) {
+								logger.log(GeneralMessage.RUNTIME_EXCEPTION_ENCOUNTERED,
+										"Invalid query result: " + Arrays.asList(jobStep));
+
+								throw new RuntimeException("Invalid query result");
+							}
+
+							try {
+								KubeConfig kc = productionPlanner.getKubeConfig(pfName);
+
+								if (kc == null || !kc.couldJobRun(null)) {
+									break;
+								}
+
+								UtilService.getJobStepUtil().checkJobStepToRun(kc, jsId);
+							} catch (Exception e) {
+								if (logger.isDebugEnabled())
+									logger.debug("... exception in checkJobStepToRun(" + pfName + ", " + jsId + "): ",
+											e);
+
+								logger.log(GeneralMessage.RUNTIME_EXCEPTION_ENCOUNTERED, e.getMessage());
+								throw e;
+							}
+
+						} else {
+							logger.log(GeneralMessage.RUNTIME_EXCEPTION_ENCOUNTERED,
+									"Invalid query result: " + jobStepObject);
+							throw new RuntimeException("Invalid query result");
 						}
 					}
 				}
@@ -459,7 +460,7 @@ public class OrderReleaseThread extends Thread {
 									UtilService.getOrderUtil().checkAutoClose(lambdaOrder);
 									UtilService.getOrderUtil().setTimes(lambdaOrder);
 									UtilService.getOrderUtil()
-										.setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_COMPLETED);
+										.setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_COMPLETED);
 									lambdaAnswer.setMessage(PlannerMessage.ORDER_PRODUCT_EXIST);
 									UtilService.getOrderUtil().setOrderHistory(lambdaOrder);
 								} else {
@@ -476,11 +477,11 @@ public class OrderReleaseThread extends Thread {
 									if (!lambdaOrder.getOrderState().equals(OrderState.RUNNING)) {
 										lambdaOrder.setOrderState(OrderState.RELEASED);
 										UtilService.getOrderUtil()
-											.setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_RUNNING);
+											.setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_RUNNING);
 										if (running) {
 											lambdaOrder.setOrderState(OrderState.RUNNING);
 											UtilService.getOrderUtil()
-												.setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_RUNNING);
+												.setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_RUNNING);
 										}
 									}
 
@@ -514,11 +515,11 @@ public class OrderReleaseThread extends Thread {
 								if (!lambdaOrder.getOrderState().equals(OrderState.RUNNING)) {
 									lambdaOrder.setOrderState(OrderState.RELEASED);
 									UtilService.getOrderUtil()
-										.setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_RUNNING);
+										.setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_RUNNING);
 									if (running) {
 										lambdaOrder.setOrderState(OrderState.RUNNING);
 										UtilService.getOrderUtil()
-											.setStateMessage(lambdaOrder, ProductionPlanner.STATE_MESSAGE_RUNNING);
+											.setStateMessage(lambdaOrder, ProcessingOrder.STATE_MESSAGE_RUNNING);
 									}
 								}
 

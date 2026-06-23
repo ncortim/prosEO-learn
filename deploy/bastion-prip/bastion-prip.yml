@@ -12,15 +12,17 @@
     - http
     - https
     kubectl_proxy_port: 8001
+
   roles:
   - configure_users
   - configure_sshd
   - hardening
   - configure_firewall
   - configure_nginx_proxy
+  - configure_ntp  
+  - configure_dnf_automatic
   
   tasks:
-  
   - name: Set hostname
     hostname:
       name: bastion-prip

@@ -1,4 +1,4 @@
-FROM localhost:5000/proseo-notification:2.0.0
+FROM localhost:5000/proseo-notification:2.1.1
 ADD application.yml /usr/share/notification/application.yml
 WORKDIR /usr/share/notification
 

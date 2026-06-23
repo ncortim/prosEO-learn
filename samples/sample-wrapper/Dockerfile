@@ -1,10 +1,10 @@
-FROM localhost:5000/proseo-sample-processor:2.0.0
+FROM localhost:5000/proseo-sample-processor:2.1.1
 WORKDIR /usr/share/proseo-sample-wrapper
 
 ADD target/proseo-sample-wrapper-jar-with-dependencies.jar proseo-sample-wrapper.jar
 
 # Timeout if other prosEO services do not respond within 10 min
-ENV HTTP_TIMEOUT=600
+ENV HTTP_TIMEOUT=60000
 
 ENV PROCESSOR_SHELL_COMMAND="java -jar /usr/share/sample-processor/proseo-sample-processor.jar"
 

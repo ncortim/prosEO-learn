@@ -114,7 +114,7 @@ public class OrderUtil {
 					jobUtil.cancel(job);
 				}
 				order.setOrderState(OrderState.FAILED);
-				setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+				setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 				order.incrementVersion();
 				RepositoryService.getOrderRepository().save(order);
 				logOrderState(order);
@@ -193,7 +193,7 @@ public class OrderUtil {
 								if (opt.isPresent()) {
 									ProcessingOrder orderx = opt.get();
 									orderx.setOrderState(OrderState.APPROVED);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 									orderx.setHasFailedJobSteps(false);
 									orderx.incrementVersion();
 									RepositoryService.getOrderRepository().save(orderx);
@@ -234,7 +234,7 @@ public class OrderUtil {
 								if (opt.isPresent()) {
 									ProcessingOrder orderx = opt.get();
 									orderx.setOrderState(OrderState.APPROVED);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 									orderx.setHasFailedJobSteps(false);
 									orderx.incrementVersion();
 									RepositoryService.getOrderRepository().save(orderx);
@@ -293,7 +293,7 @@ public class OrderUtil {
 										}
 									}
 									orderx.setOrderState(OrderState.INITIAL);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 									orderx.setHasFailedJobSteps(false);
 									orderx.incrementVersion();
 									RepositoryService.getOrderRepository().save(orderx);
@@ -434,7 +434,7 @@ public class OrderUtil {
 			case INITIAL:
 				// jobs are in initial state, no change
 				order.setOrderState(OrderState.APPROVED);
-				setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+				setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 				order.incrementVersion();
 				RepositoryService.getOrderRepository().save(order);
 				logOrderState(order);
@@ -483,7 +483,7 @@ public class OrderUtil {
 	 * @param wait         indicates whether to wait for the order planning to complete
 	 * @return Result message
 	 */
-	public PlannerResultMessage plan(long id, Long facilityId, Boolean wait) {
+	public PlannerResultMessage plan(long id, Long facilityId, Boolean wait, String user, String pw) {
 		if (logger.isTraceEnabled())
 			logger.trace(">>> plan({}, {}, {})", id, facilityId, wait);
 
@@ -561,12 +561,12 @@ public class OrderUtil {
 			// Moved here from the transaction above, because it does not affect the transaction
 			// TODO Check whether "orderOpt.get()" should be in place of "order"? (and then it should be within the transaction!)
 			// "order" is local to this method and is never updated in the database!
-			order.setStateMessage(ProductionPlanner.STATE_MESSAGE_QUEUED);
+			order.setStateMessage(ProcessingOrder.STATE_MESSAGE_QUEUED);
 
 			// Create a planning thread for this order, if required
 			String threadName = ProductionPlanner.PLAN_THREAD_PREFIX + order.getId();
 			if (!productionPlanner.getPlanThreads().containsKey(threadName)) {
-				OrderPlanThread pt = new OrderPlanThread(productionPlanner, orderDispatcher, id, facilityId, threadName);
+				OrderPlanThread pt = new OrderPlanThread(productionPlanner, orderDispatcher, id, facilityId, wait, user, pw, threadName);
 				productionPlanner.getPlanThreads().put(threadName, pt);
 				pt.start();
 				if (wait) {
@@ -650,7 +650,7 @@ public class OrderUtil {
 								if (opt.isPresent()) {
 									ProcessingOrder orderx = opt.get();
 									orderx.setOrderState(OrderState.RELEASING);
-									// setStateMessage(order, ProductionPlanner.STATE_MESSAGE_RUNNING); 
+									// setStateMessage(order, ProcessingOrder.STATE_MESSAGE_RUNNING); 
 									// moved out of transaction, see below
 									orderx.incrementVersion();
 									orderx = RepositoryService.getOrderRepository().save(orderx);
@@ -684,7 +684,7 @@ public class OrderUtil {
 					// TODO Check whether "orderOpt.get()" should be in place of "order"? (and then it should be within the
 					// transaction!)
 					// "order" is local to this method and is never updated in the database!
-					order.setStateMessage(ProductionPlanner.STATE_MESSAGE_RUNNING);
+					order.setStateMessage(ProcessingOrder.STATE_MESSAGE_RUNNING);
 
 					OrderReleaseThread releaseThread = null;
 					try {
@@ -780,7 +780,7 @@ public class OrderUtil {
 				break;
 			case RELEASED:
 				order.setOrderState(OrderState.RUNNING);
-				setStateMessage(order, ProductionPlanner.STATE_MESSAGE_RUNNING);
+				setStateMessage(order, ProcessingOrder.STATE_MESSAGE_RUNNING);
 				order.incrementVersion();
 				RepositoryService.getOrderRepository().save(order);
 				logOrderState(order);
@@ -876,10 +876,10 @@ public class OrderUtil {
 								if (ordery.getOrderState() == OrderState.RELEASING) {
 									ordery.setOrderState(OrderState.RELEASED);
 									ordery.setOrderState(OrderState.RUNNING);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_RUNNING);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_RUNNING);
 								}
 								ordery.setOrderState(OrderState.SUSPENDING);
-								setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+								setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 								RepositoryService.getOrderRepository().save(ordery);
 								return ordery;
 							});
@@ -926,12 +926,12 @@ public class OrderUtil {
 								orderz.incrementVersion();
 								if (orderz.getOrderState() == OrderState.RUNNING) {
 									orderz.setOrderState(OrderState.SUSPENDING);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 								}
 								if (suspending) {
 									// check whether some jobs are already finished
 									orderz.setOrderState(OrderState.SUSPENDING);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 									RepositoryService.getOrderRepository().save(orderz);
 									logOrderState(orderz);
 									return new PlannerResultMessage(PlannerMessage.ORDER_SUSPENDED);
@@ -939,7 +939,7 @@ public class OrderUtil {
 									// check whether some jobs are already finished
 									orderz.setOrderState(OrderState.COMPLETED);
 									setTimes(orderz);
-									setStateMessage(orderz, ProductionPlanner.STATE_MESSAGE_COMPLETED);
+									setStateMessage(orderz, ProcessingOrder.STATE_MESSAGE_COMPLETED);
 									checkAutoClose(orderz);
 									RepositoryService.getOrderRepository().save(orderz);
 									logOrderState(orderz);	
@@ -947,7 +947,7 @@ public class OrderUtil {
 									return new PlannerResultMessage(PlannerMessage.ORDER_COMPLETED);
 								} else {
 									orderz.setOrderState(OrderState.PLANNED);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 									RepositoryService.getOrderRepository().save(orderz);
 									logOrderState(orderz);
 									return new PlannerResultMessage(PlannerMessage.ORDER_SUSPENDED);
@@ -995,14 +995,14 @@ public class OrderUtil {
 								}
 								if (orderz.getOrderState() == OrderState.RELEASED) {
 									orderz.setOrderState(OrderState.SUSPENDING);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 								}
 								if (orderz.getOrderState() == OrderState.RUNNING) {
 									orderz.setOrderState(OrderState.SUSPENDING);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 								}
 								orderz.setOrderState(OrderState.PLANNED);
-								setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+								setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 								orderz.incrementVersion();
 								RepositoryService.getOrderRepository().save(orderz);
 								logOrderState(orderz);
@@ -1127,7 +1127,7 @@ public class OrderUtil {
 										orderz.setOrderState(OrderState.RUNNING);
 									}
 									orderz.setOrderState(OrderState.SUSPENDING);
-									setStateMessage(order, ProductionPlanner.STATE_MESSAGE_CANCELLED);
+									setStateMessage(order, ProcessingOrder.STATE_MESSAGE_CANCELLED);
 									RepositoryService.getOrderRepository().save(orderz);
 									return null;
 								});
@@ -1267,7 +1267,7 @@ public class OrderUtil {
 						order.setOrderState(OrderState.COMPLETED);
 						checkAutoClose(order);
 						setTimes(order);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_COMPLETED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_COMPLETED);
 						order.incrementVersion();
 						RepositoryService.getOrderRepository().save(order);
 						answer.setMessage(PlannerMessage.ORDER_COMPLETED);
@@ -1277,7 +1277,7 @@ public class OrderUtil {
 							order.setOrderState(OrderState.SUSPENDING);
 						}
 						order.setOrderState(OrderState.PLANNED);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 						order.incrementVersion();
 						RepositoryService.getOrderRepository().save(order);
 						answer.setMessage(PlannerMessage.ORDER_RETRIED);
@@ -1364,14 +1364,16 @@ public class OrderUtil {
 								}
 								if (locOrder.getOrderState() == OrderState.RUNNING) {
 									locOrder.setOrderState(OrderState.FAILED);
+									setStateMessage(locOrder, ProcessingOrder.STATE_MESSAGE_FAILED);
 								}
 								locOrder.setOrderState(OrderState.CLOSED);
 								if (locOrder.getHasFailedJobSteps()) {
-									setStateMessage(locOrder, ProductionPlanner.STATE_MESSAGE_FAILED);
+									setStateMessage(locOrder, ProcessingOrder.STATE_MESSAGE_FAILED);
 									UtilService.getOrderUtil().setOrderHistory(locOrder);
 								} else {
-									setStateMessage(locOrder, ProductionPlanner.STATE_MESSAGE_COMPLETED);
+									setStateMessage(locOrder, ProcessingOrder.STATE_MESSAGE_COMPLETED);
 								}
+								locOrder.setClosingTime(Instant.now());
 								locOrder.incrementVersion();
 								RepositoryService.getOrderRepository().save(locOrder);
 								logOrderState(locOrder);
@@ -1438,7 +1440,7 @@ public class OrderUtil {
 					boolean all = RepositoryService.getJobRepository().countJobNotFinishedByProcessingOrderId(order.getId()) == 0;
 					if (!all) {
 						order.setOrderState(OrderState.PLANNED);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_QUEUED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_QUEUED);
 						RepositoryService.getOrderRepository().save(order);
 						em.merge(order);
 						hasChanged = true;
@@ -1457,11 +1459,11 @@ public class OrderUtil {
 						order.setOrderState(OrderState.COMPLETED);
 						checkAutoClose(order);
 						setTimes(order);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_COMPLETED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_COMPLETED);
 						UtilService.getOrderUtil().setOrderHistory(order);
 					} else {
 						order.setOrderState(OrderState.FAILED);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_FAILED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_FAILED);
 					}
 					checkFurther = true;
 					RepositoryService.getOrderRepository().save(order);
@@ -1507,14 +1509,14 @@ public class OrderUtil {
 				if (allHasFinished) {
 					if (hasFailed) {
 						order.setOrderState(OrderState.FAILED);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_FAILED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_FAILED);
 						RepositoryService.getOrderRepository().save(order);
 						UtilService.getOrderUtil().setOrderHistory(order);
 						em.merge(order);
 					} else {
 						order.setOrderState(OrderState.COMPLETED);
 						setTimes(order);
-						setStateMessage(order, ProductionPlanner.STATE_MESSAGE_COMPLETED);
+						setStateMessage(order, ProcessingOrder.STATE_MESSAGE_COMPLETED);
 						checkAutoClose(order);
 						UtilService.getOrderUtil().setOrderHistory(order);
 						sendNotification(order);
@@ -1542,7 +1544,21 @@ public class OrderUtil {
 	@Transactional(isolation = Isolation.REPEATABLE_READ)
 	public Boolean checkAutoClose(ProcessingOrder order) {
 		Duration retPeriod = order.getMission().getOrderRetentionPeriod();
-		if (retPeriod != null && order.getProductionType() == ProductionType.SYSTEMATIC) {
+		if (order.isAutoClose()) {
+			if (retPeriod != null) {
+				order.setEvictionTime(Instant.now().plus(retPeriod));
+			}
+			for (Job job : order.getJobs()) {
+				if (job.getJobState() == JobState.COMPLETED) {
+					jobUtil.close(job.getId());
+				}
+			}
+			if (order.getOrderState() == OrderState.COMPLETED) {
+				order.setOrderState(OrderState.CLOSED);
+				order.setClosingTime(Instant.now());
+			}
+			return true;
+		} else if (retPeriod != null && order.getProductionType() == ProductionType.SYSTEMATIC) {
 			order.setEvictionTime(Instant.now().plus(retPeriod));
 			for (Job job : order.getJobs()) {
 				if (job.getJobState() == JobState.COMPLETED) {
@@ -1551,6 +1567,7 @@ public class OrderUtil {
 			}
 			if (order.getOrderState() == OrderState.COMPLETED) {
 				order.setOrderState(OrderState.CLOSED);
+				order.setClosingTime(Instant.now());
 			}
 			return true;
 		}
@@ -1581,7 +1598,9 @@ public class OrderUtil {
 	@Transactional(isolation = Isolation.REPEATABLE_READ)
 	public void setStateMessage(ProcessingOrder order, String stateMessage) {
 		if (order != null && stateMessage != null) {
-			order.setStateMessage(stateMessage);
+			if (!ProcessingOrder.STATE_MESSAGE_NO_INPUT.equals(order.getStateMessage())) {
+				order.setStateMessage(stateMessage);
+			}
 		}
 	}
 
@@ -1650,82 +1669,74 @@ public class OrderUtil {
 		if (logger.isTraceEnabled())
 			logger.trace(">>> sendNotification({})", order.getIdentifier());
 		if (order.getNotificationEndpoint() != null) {
-			switch (order.getOrderSource()) {
-			case ODIP:
-				if (logger.isTraceEnabled())
-					logger.trace(">>> sendNotification({})", OrderSource.ODIP);
-				// create the message content as String
-				// first check whether product is generated,
-				// use output product of first job step
-				JobStep jobStep = null;
-				if (!order.getJobs().isEmpty()) {
-					Job firstJob = null;
-					for (Job job : order.getJobs()) {
-						firstJob = job;
+			// create the message content as String
+			// first check whether product is generated,
+			// use output product of first job step
+			JobStep jobStep = null;
+			if (!order.getJobs().isEmpty()) {
+				Job firstJob = null;
+				for (Job job : order.getJobs()) {
+					firstJob = job;
+					break;
+				}
+				if (!firstJob.getJobSteps().isEmpty()) {
+					for (JobStep js : firstJob.getJobSteps()) {
+						jobStep = js;
 						break;
 					}
-					if (!firstJob.getJobSteps().isEmpty()) {
-						for (JobStep js : firstJob.getJobSteps()) {
-							jobStep = js;
-							break;
-						}
-					}
 				}
-				if (jobStep != null && jobStep.getOutputProduct() != null && jobStep.getOutputProduct().getProductFile() != null
-						&& jobStep.getOutputProduct().getProductFile() != null) {
-					String fileName = null;
-					Product product = jobStep.getOutputProduct();
-					fileName = getFirstFileName(product);
-					if (fileName != null) {
-						String message = String.join("\n", "POST", order.getNotificationEndpoint().getUri(), "{",
-								"    \"@odata.context\": \"$metadata#Notification/$entity\",",
-								"    \"ProductId\": \"" + product.getUuid() + "\",", "    \"ProductName\": \"" + fileName + "\",",
-								"    \"ProductionOrderId\": \"" + order.getUuid() + "\",",
-								"    \"NotificationDate\": \"" + Date.from(Instant.now()) + "\",", "}", "");
-
-						// Skip if notification service is not configured
-						if (config.getNotificationUrl().isBlank()) {
-							// TODO log error
-							return false;
-						}
-						RestMessage restMessage = new RestMessage();
-						restMessage.setEndpoint(order.getNotificationEndpoint().getUri());
-						restMessage.setUser(order.getNotificationEndpoint().getUsername());
-						restMessage.setPassword(order.getNotificationEndpoint().getPassword());
-						restMessage.setMessage(message);
-						restMessage.setRaw(true);
-						restMessage.setContentType(MediaType.APPLICATION_JSON);
-						restMessage.setSender(order.getOrderSource().toString());
-						String url = config.getNotificationUrl() + "/notify";
-						RestTemplate restTemplate = new RestTemplate();
-						ResponseEntity<String> response = null;
-						try {
-							if (logger.isTraceEnabled())
-								logger.trace(">>> notify({}, {})", url, restMessage);
-							response = restTemplate.postForEntity(url, restMessage, String.class);
-						} catch (RestClientException rce) {
-							logger.log(PlannerMessage.NOTIFY_FAILED, url, rce.getMessage());
-							return false;
-						} catch (Exception e) {
-							String msg = logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED, e.getMessage());
-
-							if (logger.isDebugEnabled())
-								logger.debug("... exception stack trace: ", msg);
-
-							return false;
-						}
-						if (!(HttpStatus.OK.equals(response.getStatusCode())
-								|| (HttpStatus.CREATED.equals(response.getStatusCode())))) {
-							logger.log(PlannerMessage.NOTIFY_FAILED, url, response.getStatusCode().toString());
-							return false;
-						}
-					}
-				}
-				return true;
-			default:
-				// do nothing
-				break;
 			}
+			if (jobStep != null && jobStep.getOutputProduct() != null && jobStep.getOutputProduct().getProductFile() != null
+					&& jobStep.getOutputProduct().getProductFile() != null) {
+				String fileName = null;
+				Product product = jobStep.getOutputProduct();
+				fileName = getFirstFileName(product);
+				if (fileName != null) {
+					String message = String.join("\n", "POST", order.getNotificationEndpoint().getUri(), "{",
+							"    \"@odata.context\": \"$metadata#Notification/$entity\",",
+							"    \"ProductId\": \"" + product.getUuid() + "\",", "    \"ProductName\": \"" + fileName + "\",",
+							"    \"ProductionOrderId\": \"" + order.getUuid() + "\",",
+							"    \"NotificationDate\": \"" + Date.from(Instant.now()) + "\",", "}", "");
+
+					// Skip if notification service is not configured
+					if (config.getNotificationUrl().isBlank()) {
+						// TODO log error
+						return false;
+					}
+					RestMessage restMessage = new RestMessage();
+					restMessage.setEndpoint(order.getNotificationEndpoint().getUri());
+					restMessage.setUser(order.getNotificationEndpoint().getUsername());
+					restMessage.setPassword(order.getNotificationEndpoint().getPassword());
+					restMessage.setMessage(message);
+					restMessage.setRaw(true);
+					restMessage.setContentType(MediaType.APPLICATION_JSON);
+					restMessage.setSender(order.getOrderSource().toString());
+					String url = config.getNotificationUrl() + "/notify";
+					RestTemplate restTemplate = new RestTemplate();
+					ResponseEntity<String> response = null;
+					try {
+						if (logger.isTraceEnabled())
+							logger.trace(">>> notify({}, {})", url, restMessage);
+						response = restTemplate.postForEntity(url, restMessage, String.class);
+					} catch (RestClientException rce) {
+						logger.log(PlannerMessage.NOTIFY_FAILED, url, rce.getMessage());
+						return false;
+					} catch (Exception e) {
+						String msg = logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED, e.getMessage());
+
+						if (logger.isDebugEnabled())
+							logger.debug("... exception stack trace: ", msg);
+
+						return false;
+					}
+					if (!(HttpStatus.OK.equals(response.getStatusCode())
+							|| (HttpStatus.CREATED.equals(response.getStatusCode())))) {
+						logger.log(PlannerMessage.NOTIFY_FAILED, url, response.getStatusCode().toString());
+						return false;
+					}
+				}
+			}
+			return true;
 		}
 		return false;
 	}
@@ -1845,7 +1856,7 @@ public class OrderUtil {
 			return null;
 		});
 		if (facilityId != null) {
-			UtilService.getOrderUtil().plan(id, facilityId, false);
+			UtilService.getOrderUtil().plan(id, facilityId, false, null, null);
 		} else {
 			// no job with processing facility exist, can't plan
 			final ProcessingOrder order = transactionTemplate.execute((status) -> {

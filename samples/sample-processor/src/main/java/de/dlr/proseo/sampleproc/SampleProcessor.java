@@ -54,7 +54,7 @@ public class SampleProcessor {
 
 	// Error messages
 	private static final String MSG_LEAVING_SAMPLE_PROCESSOR = "Leaving sample-processor with exit code {} ({})";
-	private static final String MSG_STARTING_SAMPLE_PROCESSOR = "Starting sample-processor V2.0.0 with JobOrder file {}";
+	private static final String MSG_STARTING_SAMPLE_PROCESSOR = "Starting sample-processor V2.1.1 with JobOrder file {}";
 	private static final String MSG_INVALID_NUMBER_OF_ARGUMENTS = "Invalid number of invocation arguments: {} (only 1 allowed)";
 	private static final String MSG_INVALID_NUMBER_OF_OUTPUT_FILES = "Invalid number of output files: {} (1 - 10 expected)";
 	private static final String MSG_INVALID_NUMBER_OF_OUTPUT_FILE_TYPES = "Invalid number of output file types: {} (exactly 1 expected)";
@@ -519,6 +519,14 @@ public class SampleProcessor {
 		return true;
 	}
 
+	private void sleep() {
+		try {
+			logger.info("... wait 2 seconds ...");
+			Thread.sleep(2000);
+		} catch (InterruptedException e) {
+			// Never mind ...
+		}
+	}
 	/**
 	 * Perform the dummy processing: check arguments, parse JobOrder file, read one
 	 * input file, create one output file
@@ -534,6 +542,7 @@ public class SampleProcessor {
 		// Get the JobOrder file from the invocation arguments
 		File jobOrderFile = checkArguments(args);
 		if (null == jobOrderFile) {
+			sleep();
 			logger.info(MSG_LEAVING_SAMPLE_PROCESSOR, EXIT_CODE_FAILURE, EXIT_TEXT_FAILURE);
 			return EXIT_CODE_FAILURE;
 		}
@@ -541,6 +550,7 @@ public class SampleProcessor {
 		// Parse the JobOrder file
 		Document jobOrderDoc = parseJobOrderFile(jobOrderFile);
 		if (null == jobOrderDoc) {
+			sleep();
 			logger.info(MSG_LEAVING_SAMPLE_PROCESSOR, EXIT_CODE_FAILURE, EXIT_TEXT_FAILURE);
 			return EXIT_CODE_FAILURE;
 		}
@@ -548,6 +558,7 @@ public class SampleProcessor {
 		// Check the configuration/static input files
 		boolean ok = checkConfiguration(jobOrderDoc);
 		if (!ok) {
+			sleep();
 			logger.info(MSG_LEAVING_SAMPLE_PROCESSOR, EXIT_CODE_FAILURE, EXIT_TEXT_FAILURE);
 			return EXIT_CODE_FAILURE;
 		}
@@ -555,6 +566,7 @@ public class SampleProcessor {
 		// Read some data from the input file
 		SampleProduct inputProduct = readInputProduct(jobOrderDoc);
 		if (null == inputProduct) {
+			sleep();
 			logger.info(MSG_LEAVING_SAMPLE_PROCESSOR, EXIT_CODE_FAILURE, EXIT_TEXT_FAILURE);
 			return EXIT_CODE_FAILURE;
 		}

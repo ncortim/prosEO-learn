@@ -11,7 +11,6 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 import de.dlr.proseo.interfaces.rest.model.RestHealth;
@@ -32,7 +31,6 @@ import de.dlr.proseo.model.util.ProseoUtil;
  * @author Melchinger
  *
  */
-
 public class MicroService {
 
 	private static ProseoLogger logger = new ProseoLogger(MicroService.class);
@@ -154,6 +152,9 @@ public class MicroService {
 	 * @param monitor The basic Monitor thread
 	 */
 	public void check(MonitorServices monitor) {
+		if (logger.isDebugEnabled()) {
+		    logger.debug("Checking service '{}' (id={}) at URL={}", name, nameId, url);
+		}
 
 		String serviceUrl = this.getUrl();
 
@@ -165,6 +166,9 @@ public class MicroService {
 						.build();
 				try {
 					ResponseEntity<RestHealth> response = restTemplate.getForEntity(serviceUrl, RestHealth.class);
+
+					logger.debug("Service responded with HTTP status " + response.getStatusCode());
+
 					if (HttpStatus.OK.equals(response.getStatusCode())) {
 						// check whether service is running in docker
 						if (response.getBody().getStatus().equalsIgnoreCase("UP")) {
@@ -174,17 +178,17 @@ public class MicroService {
 						}
 					}
 				} catch (HttpClientErrorException.BadRequest | HttpClientErrorException.NotFound e) {
+					logger.debug("Actuator check failed for service '{}' at {}: {}", name, serviceUrl, e.getMessage());
 					logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED,e);
-					// TODO
 				} catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden e) {
+					logger.debug("Actuator check failed for service '{}' at {}: {}", name, serviceUrl, e.getMessage());
 					logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED,e);
-					// TODO
 				} catch (RestClientException e) {
+					logger.debug("Actuator check failed for service '{}' at {}: {}", name, serviceUrl, e.getMessage());
 					logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED,e);
-					// TODO
 				} catch (Exception e) {
+					logger.debug("Actuator check failed for service '{}' at {}: {}", name, serviceUrl, e.getMessage());
 					logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED,e);
-					// TODO
 				}
 			} else {
 				RestTemplate restTemplate = MonitorApplication.rtb
@@ -198,6 +202,12 @@ public class MicroService {
 							HttpStatus.BAD_REQUEST.equals(response.getStatusCode()) ||
 							HttpStatus.UNAUTHORIZED.equals(response.getStatusCode()) ||
 							HttpStatus.FORBIDDEN.equals(response.getStatusCode())) {
+
+						if (logger.isDebugEnabled()) {
+						    logger.debug("Service '{}' responded with status {}. Treated as RUNNING.",
+						        name, response.getStatusCode());
+						}
+
 						// We got an answer and assume the service is running
 						this.state = MonServiceStates.RUNNING_ID;
 						createEntry(monitor);
@@ -205,28 +215,43 @@ public class MicroService {
 					}
 				} catch (HttpClientErrorException.BadRequest | HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden e) {
 					// We got an answer and assume the service is running
+					if (logger.isDebugEnabled()) {
+						logger.debug("Service '{}' returned client error {}. Treated as RUNNING.",
+						    name, e.getStatusCode());
+					}
 					this.state = MonServiceStates.RUNNING_ID;
 					createEntry(monitor);
 					return;
 				} catch (Exception e) {
-					logger.log(GeneralMessage.EXCEPTION_ENCOUNTERED,e);
+					if (logger.isTraceEnabled()) {
+					    logger.trace("Service '{}' did not respond properly: {}", name, e.getMessage());
+					}
 				}
 			}
 		}
 
 		// service does not answer or answer unknown state, check further if docker or kubernetes are set, else set to stopped
+		if (logger.isDebugEnabled()) {
+			logger.debug("Service '{}' did not respond via HTTP, checking container/runtime state", name);
+		}
 		if (monitor.getDockerService(this.getDocker()) == null && monitor.getKubernetes(this.getKubernetes()) == null) {
 			this.state = MonServiceStates.STOPPED_ID;
 			createEntry(monitor);
 			return;
 		}
+
 		DockerService ds = monitor.getDockerService(this.getDocker());
 		if (ds != null) {
 			ds.check(this, monitor);
+			createEntry(monitor);
 			return;
 		} else if (monitor.getKubernetes(this.getKubernetes()) != null) {
 			// TODO check for Kubernetes
 			return;
+		}
+
+		if (logger.isDebugEnabled()) {
+			logger.debug("Service '{}' not found in Docker/Kubernetes. Marking as STOPPED.", name);
 		}
 		// TODO Is it necessary to inspect process list of a machine?
 		this.state = MonServiceStates.STOPPED_ID;
@@ -241,6 +266,11 @@ public class MicroService {
 	 * @param monitor The basic Monitor thread
 	 */
 	public void createEntry(MonitorServices monitor) {
+
+		if (logger.isDebugEnabled()) {
+			logger.debug("Persisting state '{}' for service '{}'", state, name);
+		}
+
 		if (getIsProseo()) {
 			// It is a prosEO service
 			TransactionTemplate transactionTemplate = new TransactionTemplate(monitor.getTxManager());
@@ -252,6 +282,7 @@ public class MicroService {
 						MonServiceStateOperation ms = new MonServiceStateOperation();
 						ms.setMonService(monitor.getMonService(getNameId(), getName()));
 						Optional<MonServiceState> aState = RepositoryService.getMonServiceStateRepository().findById(getState());
+
 						ms.setMonServiceState(aState.get());
 						ms.setDatetime(Instant.now());
 						ms = RepositoryService.getMonServiceStateOperationRepository().save(ms);
@@ -259,7 +290,10 @@ public class MicroService {
 					});
 					break;
 				} catch (CannotAcquireLockException e) {
-					if (logger.isDebugEnabled()) logger.debug("... database concurrency issue detected: ", e);
+					if (logger.isDebugEnabled()) {
+						logger.debug("Database lock issue while saving state for '{}', attempt {}/{}",
+							    name, i + 1, ProseoUtil.DB_MAX_RETRY, e);
+					};
 
 					if ((i + 1) < ProseoUtil.DB_MAX_RETRY) {
 						ProseoUtil.dbWait();
@@ -287,7 +321,10 @@ public class MicroService {
 					});
 					break;
 				} catch (CannotAcquireLockException e) {
-					if (logger.isDebugEnabled()) logger.debug("... database concurrency issue detected: ", e);
+					if (logger.isDebugEnabled()) {
+						logger.debug("Database lock issue while saving state for '{}', attempt {}/{}",
+							    name, i + 1, ProseoUtil.DB_MAX_RETRY, e);
+					};
 
 					if ((i + 1) < ProseoUtil.DB_MAX_RETRY) {
 						ProseoUtil.dbWait();

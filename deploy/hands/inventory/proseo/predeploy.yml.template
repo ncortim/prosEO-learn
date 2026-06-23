@@ -1,25 +1,26 @@
 ---
-# Configure basic network settings before deploying Kubernetes
+- name: Configure basic network settings before deploying Kubernetes
+  hosts: k8s_cluster
+  become: true
 
-- hosts: k8s_cluster
+  roles:
+    - configure_dnf_automatic
+    - configure_ntp
+    - prepare_log_collection
+
   tasks:
-  
-  - name: Set default route
-    shell: ip route replace default via 10.x.x.x
-  
-  - name: Set DNS resolution
-    lineinfile:
-      path: /etc/resolv.conf
-      regexp: '^nameserver'
-      line: nameserver 8.8.8.8
-      insertbefore: BOF
-    
-  - name: disable firewalld
-    service:
-      name: firewalld
-      state: stopped
-      enabled: no
-      - name: Install NFS client
-    yum:
-      name: nfs-utils
-      state: present
+    - name: Set default route
+      command: ip route replace default via 10.x.x.x
+      changed_when: false
+
+    - name: Set DNS resolution
+      lineinfile:
+        path: /etc/resolv.conf
+        regexp: '^nameserver'
+        line: 'nameserver 8.8.8.8'
+        insertbefore: BOF
+
+    - name: Install NFS client
+      dnf:
+        name: nfs-utils
+        state: present

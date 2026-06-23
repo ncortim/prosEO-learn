@@ -1,3 +1,3 @@
-FROM localhost:5000/proseo-processor-mgr:2.0.0
+FROM localhost:5000/proseo-processor-mgr:2.1.1
 ADD application.yml /usr/share/proseo-processor-mgr/application.yml
 WORKDIR /usr/share/proseo-processor-mgr/

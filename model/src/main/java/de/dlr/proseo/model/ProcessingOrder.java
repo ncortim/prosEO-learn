@@ -29,7 +29,6 @@ import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
-
 import org.springframework.transaction.annotation.Transactional;
 
 import de.dlr.proseo.model.Job.JobState;
@@ -59,6 +58,14 @@ public class ProcessingOrder extends PersistentObject {
 	private static final String MSG_SLICING_DURATION_NOT_ALLOWED = "Setting of slicing duration not allowed for slicing type ";
 	private static final String MSG_SLICING_OVERLAP_NOT_ALLOWED = "Setting of slicing overlap not allowed for slicing type ";
 
+	public static String STATE_MESSAGE_COMPLETED = "requested output product is available";
+	public static String STATE_MESSAGE_QUEUED = "request is queued for processing";
+	public static String STATE_MESSAGE_RUNNING = "request is under processing";
+	public static String STATE_MESSAGE_CANCELLED = "request cancelled by user";
+	public static String STATE_MESSAGE_FAILED = "production has failed";
+	public static String STATE_MESSAGE_NO_INPUT_AVAILABLE = "input product currently unavailable";
+	public static String STATE_MESSAGE_NO_INPUT = "input product not found on LTA";
+	
 	/** Mission, to which this order belongs */
 	@ManyToOne
 	private Mission mission;
@@ -125,6 +132,12 @@ public class ProcessingOrder extends PersistentObject {
 	private Instant actualCompletionTime;
 	
 	/**
+	 * Date and time at which the  ProcessingOrder was closed
+	 */
+	@Column(name = "closing_time", columnDefinition = "TIMESTAMP")
+	private Instant closingTime;
+	
+	/**
 	 * Time for automatic order deletion, if an orderRetentionPeriod is set for the mission and
 	 * the productionType is SYSTEMATIC_PRODUCTION.
 	 */
@@ -146,10 +159,10 @@ public class ProcessingOrder extends PersistentObject {
 	private Instant stopTime;
 	
 	/**
-	 * Method for slicing the orbit time interval into jobs for product generation (default "ORBIT")
+	 * Method for slicing the orbit time interval into jobs for product generation (default "NONE")
 	 */
 	@Enumerated(EnumType.STRING)
-	private OrderSlicingType slicingType = OrderSlicingType.ORBIT;
+	private OrderSlicingType slicingType = OrderSlicingType.NONE;
 	
 	/**
 	 * Duration of a time slice for slicing type TIME_SLICE
@@ -228,8 +241,36 @@ public class ProcessingOrder extends PersistentObject {
 	
 	/** Indicates whether at least one of the job steps for this order is in state FAILED */
 	private Boolean hasFailedJobSteps = false;
-	
-	/** The workflow applicable for this processing order (only for orders created through the On-Demand Interface Point API */
+
+    /**
+     * If set the processing order will be released automatically either immediately after planning or 
+     * when its executionTime is reached, whichever comes later.
+     */
+	@Column(columnDefinition = "boolean not null default false")
+    private boolean autoRelease = false;
+    
+    /**
+     * If set, the order will be closed immediately after successful completion.
+     */
+    @Column(columnDefinition = "boolean not null default false")
+    private boolean autoClose = false;
+    
+    /**
+     * If set, the order will fail or will automatically be started regardless of input data availability,
+     * when the given duration after the release time has elapsed. 
+     * Start or failure are determined by the setting of onInputDataTimeoutFail.
+     */
+    private Duration inputDataTimeoutPeriod;
+    
+    /**
+     * If true (the default setting) and inputDataTimeoutPeriod is set, the order will fail when the timeout period 
+     * after the release time is expired and the input data is not complete; if false, the order will then be started 
+     * regardless of the availability of its input data.
+     */
+    @Column(columnDefinition = "boolean not null default true")
+    private boolean onInputDataTimeoutFail = true;
+
+	/** The workflow applicable for this processing order (only for orders created from a workflow) */
 	@ManyToOne
 	private Workflow workflow;
 	
@@ -368,6 +409,7 @@ public class ProcessingOrder extends PersistentObject {
 			} else {
 				// Something is wrong, so setting the order to FAILED to be able to restart/reset it
 				orderState = OrderState.FAILED;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_FAILED;
 				return;
 			}
 		}
@@ -397,6 +439,7 @@ public class ProcessingOrder extends PersistentObject {
 		if (jobCount == jobStateMap.get(JobState.CLOSED)) {
 			// All jobs are CLOSED
 			orderState = OrderState.CLOSED;
+			stateMessage = ProcessingOrder.STATE_MESSAGE_COMPLETED;
 			Duration retPeriod = getMission().getOrderRetentionPeriod();
 			if (retPeriod != null && getProductionType() == ProductionType.SYSTEMATIC) {
 				setEvictionTime(Instant.now().plus(retPeriod));
@@ -406,18 +449,22 @@ public class ProcessingOrder extends PersistentObject {
 			// All jobs are terminated in some way
 			if (0 < jobStateMap.get(JobState.FAILED)) {
 				orderState = OrderState.FAILED;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_FAILED;
 			} else {
 				orderState = OrderState.COMPLETED;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_COMPLETED;
 			}
 		// We still have unfinished jobs   && 0 < terminatedJobCount
 		} else if (0 == activeJobCount) {
 			// At least one job has terminated, but none is currently active
 			if (OrderState.SUSPENDING.equals(orderState)) {
 				orderState = OrderState.PLANNED;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_QUEUED;
 			} else if (OrderState.RELEASING.equals(orderState)) {
 				// Keep status until all jobs are released
 				if (0 == jobStateMap.get(JobState.PLANNED)) {
 					orderState = OrderState.RUNNING;
+					stateMessage = ProcessingOrder.STATE_MESSAGE_RUNNING;
 				}
 			} else {
 				// keep state
@@ -431,13 +478,16 @@ public class ProcessingOrder extends PersistentObject {
 				// Keep status until all jobs are released
 				if (0 == jobStateMap.get(JobState.PLANNED)) {
 					orderState = OrderState.RUNNING;
+					stateMessage = ProcessingOrder.STATE_MESSAGE_RUNNING;
 				}
 			} else if (orderState == OrderState.PLANNED) {
 				// The complete order was suspended and some job steps finished later
 				// keep the order state
 				orderState = OrderState.PLANNED;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_QUEUED;
 			} else {
 				orderState = OrderState.RUNNING;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_RUNNING;
 			}
 		// No active and no terminated jobs
 		} else if (0 < jobStateMap.get(JobState.RELEASED)) {
@@ -446,25 +496,28 @@ public class ProcessingOrder extends PersistentObject {
 				if (jobCount == jobStateMap.get(JobState.RELEASED)) {
 					// All jobs are released
 					orderState = OrderState.RELEASED;
+					stateMessage = ProcessingOrder.STATE_MESSAGE_QUEUED;
 				} else {
 					// Do nothing, there are still jobs to release
 				}
 			} else {
 				orderState = OrderState.RELEASED;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_QUEUED;
 			}
 		// All jobs should be either in state INITIAL or in state PLANNED
 		} else if (jobCount == jobStateMap.get(JobState.PLANNED)) {
 			// All jobs are planned
 			orderState = OrderState.PLANNED;
+			stateMessage = ProcessingOrder.STATE_MESSAGE_QUEUED;
 		} else {
 			if (OrderState.PLANNING_FAILED.equals(orderState)) {
 				// Do nothing, further way of action to be decided by operator
 			} else {
 				// We do have jobs, but they are not fully planned yet
 				orderState = OrderState.PLANNING;
+				stateMessage = ProcessingOrder.STATE_MESSAGE_QUEUED;
 			}
-		}
-		
+		}		
 	}
 
 	/**
@@ -591,6 +644,24 @@ public class ProcessingOrder extends PersistentObject {
 	 */
 	public void setActualCompletionTime(Instant actualCompletionTime) {
 		this.actualCompletionTime = actualCompletionTime;
+	}
+
+	/**
+	 * Gets the date and time the order was closed
+	 * 
+	 * @return the order closing time
+	 */
+	public Instant getClosingTime() {
+		return closingTime;
+	}
+
+	/**
+	 * Sets the date and time the order was closed
+	 * 
+	 * @param closingTime the order closing time to set
+	 */
+	public void setClosingTime(Instant closingTime) {
+		this.closingTime = closingTime;
 	}
 
 	/**
@@ -974,6 +1045,81 @@ public class ProcessingOrder extends PersistentObject {
 	 */
 	public void setHasFailedJobSteps(Boolean hasFailedJobSteps) {
 		this.hasFailedJobSteps = hasFailedJobSteps;
+	}
+
+	/**
+	 * Indicates whether a processing order reaching state PLANNED will automatically be released
+	 * 
+	 * @return true, if the order will be released automatically, false otherwise
+	 */
+	public boolean isAutoRelease() {
+		return autoRelease;
+	}
+
+	/**
+	 * Sets a flag indicating whether a processing order reaching state PLANNED shall automatically be released
+	 * 
+	 * @param autoRelease set to true, if the order shall be released automatically, and to false otherwise
+	 */
+	public void setAutoRelease(boolean autoRelease) {
+		this.autoRelease = autoRelease;
+	}
+
+	/**
+	 * Indicates whether a processing order reaching state COMPLETED will automatically be closed
+	 * 
+	 * @return true, if the order will be closed automatically, false otherwise
+	 */
+	public boolean isAutoClose() {
+		return autoClose;
+	}
+
+	/**
+	 * Sets a flag indicating whether a processing order reaching state COMPLETED shall automatically be closed
+	 * 
+	 * @param autoClose set to true, if the order shall be closed automatically, and to false otherwise
+	 */
+	public void setAutoClose(boolean autoClose) {
+		this.autoClose = autoClose;
+	}
+
+	/**
+	 * Gets the period of time, after which the order will fail or will automatically be started regardless of input data 
+	 * availability
+	 * 
+	 * @return the input data timeout period
+	 */
+	public Duration getInputDataTimeoutPeriod() {
+		return inputDataTimeoutPeriod;
+	}
+
+	/**
+	 * Sets the period of time, after which the order shall fail or shall automatically be started regardless of input data 
+	 * availability
+	 * 
+	 * @param inputDataTimeoutPeriod the input data timeout period to set
+	 */
+	public void setInputDataTimeoutPeriod(Duration inputDataTimeoutPeriod) {
+		this.inputDataTimeoutPeriod = inputDataTimeoutPeriod;
+	}
+
+	/**
+	 * Indicates whether the order will fail after the input data timeout period has elapsed
+	 * 
+	 * @return true, if the order will fail after timeout, false, if it will be processed with incomplete input data
+	 */
+	public boolean isOnInputDataTimeoutFail() {
+		return onInputDataTimeoutFail;
+	}
+
+	/**
+	 * Sets a flag indicating whether the order will fail after the input data timeout period has elapsed
+	 * 
+	 * @param onInputDataTimeoutFail set to true, if the order shall fail after timeout, and to false, if it shall be processed 
+	 * with incomplete input data
+	 */
+	public void setOnInputDataTimeoutFail(boolean onInputDataTimeoutFail) {
+		this.onInputDataTimeoutFail = onInputDataTimeoutFail;
 	}
 
 	/** Get the workflow

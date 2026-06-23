@@ -22,6 +22,7 @@ import de.dlr.proseo.model.ProcessingFacility;
 import de.dlr.proseo.model.ProcessingOrder;
 import de.dlr.proseo.model.enums.FacilityState;
 import de.dlr.proseo.model.enums.OrderSource;
+import de.dlr.proseo.model.enums.ProductionType;
 import de.dlr.proseo.model.service.RepositoryService;
 import de.dlr.proseo.model.service.SecurityService;
 import de.dlr.proseo.model.util.ProseoUtil;
@@ -358,6 +359,7 @@ public class OrderControllerImpl implements OrderController {
 			return new ResponseEntity<>(http.errorHeaders(message), HttpStatus.NOT_FOUND);
 		}
 
+		String[] userPassword = securityConfig.parseAuthenticationHeader(httpHeaders.getFirst(HttpHeaders.AUTHORIZATION));
 		try {
 			// Find the processing order by its releaseId
 			ProcessingOrder order = findOrder(releaseId);
@@ -390,7 +392,7 @@ public class OrderControllerImpl implements OrderController {
 			}
 
 			// Plan the order on the processing facility
-			PlannerResultMessage msg = orderUtil.plan(order.getId(), processingFacility.getId(), wait);
+			PlannerResultMessage msg = orderUtil.plan(order.getId(), processingFacility.getId(), wait, userPassword[0], userPassword[1]);
 			if (msg.getSuccess()) {
 				// If planning is successful, retrieve and return the updated order
 				RestOrder restOrder = getRestOrder(order.getId());
@@ -490,7 +492,8 @@ public class OrderControllerImpl implements OrderController {
 				// resumed
 				RestOrder restOrder = getRestOrder(order.getId());
 				// handle special ODIP case
-				if (restOrder.getOrderSource().equals(OrderSource.ODIP.toString())) {
+				if (restOrder.getProductionType().equals(ProductionType.ON_DEMAND_DEFAULT.toString())
+						|| restOrder.getProductionType().equals(ProductionType.ON_DEMAND_NON_DEFAULT.toString())) {
 					// read database object and check state of job steps.
 					// They have to be released and not waiting input
 

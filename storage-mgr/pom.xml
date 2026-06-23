@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>de.dlr.proseo</groupId>
 		<artifactId>proseo</artifactId>
-		<version>2.0.0</version>
+		<version>2.1.1</version>
 	</parent>
 
 	<artifactId>proseo-storage-mgr</artifactId>
@@ -90,6 +90,10 @@
 				<exclusion>
 					<groupId>log4j</groupId>
 					<artifactId>log4j</artifactId>
+				</exclusion>
+				<exclusion><!-- Excluded due to known vulnerabilities in V2.29.52 ; not used anyway -->
+				    <groupId>software.amazon.awssdk</groupId>
+				    <artifactId>grafana</artifactId>
 				</exclusion>
 			</exclusions>
 		</dependency>

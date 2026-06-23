@@ -1,5 +1,5 @@
 <!doctype html>
-<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<html xmlns:th="http://www.thymeleaf.org" lang="en" style="hyphens: auto;word-break: break-word;">
   <head>
     <meta charset="utf-8">
       <meta name="viewport"
@@ -349,23 +349,32 @@
 												</tr>
 												<tr>
 													<td class="tr-rowspan"><span>&nbsp;</span></td>
-													<td colspan="3" th:text="${file?.productFileName}"></td>
+													<td colspan="3">
+                           <a th:href="'/productfile/download?productId=' + ${elem?.id} + '&amp;filePath=' + ${file?.filePath} + '&amp;fileName=' + ${file?.productFileName} + '&amp;facilityName=' + ${file?.processingFacilityName}"
+                              type="application/octet-stream"
+                              th:download="${file?.productFileName}"><span th:text="${file?.productFileName}"></span></a></td>
 													<td th:text="${file?.fileSize}"></td>
 													<td th:text="${file?.checksum}"></td>
 													<td th:text="${file?.checksumTime}"></td>
 												</tr>
 												<tr>
 													<td class="tr-rowspan"><span>&nbsp;</span></td>
-													<td colspan="3" th:text="${file?.zipFileName}"></td>
+													<td colspan="3">
+													  <a th:href="'/productfile/download?productId=' + ${elem?.id} + '&amp;filePath=' + ${file?.filePath} + '&amp;fileName=' + ${file?.zipFileName} + '&amp;facilityName=' + ${file?.processingFacilityName}"
+                              type="application/octet-stream"
+                              th:download="${file?.zipFileName}"><span th:text="${file?.zipFileName}"></span></a></td>
 													<td th:text="${file?.zipFileSize}"></td>
 													<td th:text="${file?.zipChecksum}"></td>
 													<td th:text="${file?.zipChecksumTime}"></td>
 												</tr>
 												<tr>
 													<td class="tr-rowspan"><span>&nbsp;</span></td>
-													<td colspan="6"><a
+													<td colspan="6"><span
 														th:each="comp : ${file?.auxFileNames}"
-														class="proseo-list-item"><span th:text="${comp}"></span></a></td>
+														class="proseo-list-item">
+                            <a th:href="'/productfile/download?productId=' + ${elem?.id} + '&amp;filePath=' + ${file?.filePath} + '&amp;fileName=' + ${comp} + '&amp;facilityName=' + ${file?.processingFacilityName}"
+                              type="application/octet-stream"
+                              th:download="${comp}"><span th:text="${comp}"></span></a></span></td>
 												</tr>
 											</div>
 										</tbody>

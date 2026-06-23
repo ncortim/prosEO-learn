@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -185,7 +186,7 @@ public class ProcessingOrderMgr {
 					throw new IllegalArgumentException(logger.log(OrderMgrMessage.DUPLICATE_ORDER_UUID, modelOrder.getUuid()));
 				}
 			}
-
+			
 			// Make sure order identifier is not yet in use
 			if (null != RepositoryService.getOrderRepository()
 				.findByMissionCodeAndIdentifier(order.getMissionCode(), modelOrder.getIdentifier())) {
@@ -290,6 +291,10 @@ public class ProcessingOrderMgr {
 					throw new IllegalArgumentException(
 							logger.log(OrderMgrMessage.INVALID_REQUESTED_CLASS, productType, mission.getCode()));
 				}
+				if (order.getInputProductClasses().contains(productType)) {
+					throw new IllegalArgumentException(
+							logger.log(OrderMgrMessage.INVALID_PRODUCT_CLASS_IN_INPUT, productType));
+				}
 				modelOrder.getRequestedProductClasses().add(productClass);
 			}
 
@@ -343,9 +348,13 @@ public class ProcessingOrderMgr {
 			logger.log(OrderMgrMessage.ORDER_CREATED, order.getIdentifier(), order.getMissionCode());
 			
 			// Create and initialize the history element of the processing order.
-			ProcessingOrderHistory orderHistory = new ProcessingOrderHistory();
-			orderHistory.setIdentifier(modelOrder.getIdentifier());
-			orderHistory.setMissionCode(modelOrder.getMission().getCode());
+			ProcessingOrderHistory orderHistory = RepositoryService.getProcessingOrderHistoryRepository()
+					.findByMissionCodeAndIdentifier(modelOrder.getMission().getCode(), modelOrder.getIdentifier());
+			if (orderHistory == null) {
+				orderHistory = new ProcessingOrderHistory();
+				orderHistory.setIdentifier(modelOrder.getIdentifier());
+				orderHistory.setMissionCode(modelOrder.getMission().getCode());
+			}
 			orderHistory.setCreationTime(Instant.now());
 			orderHistory.setOrderState(modelOrder.getOrderState());
 			for (ProductClass pc : modelOrder.getRequestedProductClasses()) {
@@ -986,7 +995,12 @@ public class ProcessingOrderMgr {
 				stateChangeOnly = false;
 			}
 		}
-
+		for (ProductClass pc : newRequestedProductClasses) {
+			if (newInputProductClasses.contains(pc)) {
+				throw new IllegalArgumentException(
+						logger.log(OrderMgrMessage.INVALID_PRODUCT_CLASS_IN_INPUT, pc.getProductType()));
+			}
+		}
 		if (!modelOrder.getOutputFileClass().equals(changedOrder.getOutputFileClass())) {
 			if (!mission.getFileClasses().contains(changedOrder.getOutputFileClass())) {
 				throw new IllegalArgumentException(
@@ -1116,11 +1130,30 @@ public class ProcessingOrderMgr {
 		}
 
 		// Check for changes in notificationEndpoint
-		if (null != modelOrder.getNotificationEndpoint()
-				&& !modelOrder.getNotificationEndpoint().equals(changedOrder.getNotificationEndpoint())) {
+		if (!Objects.equals(modelOrder.getNotificationEndpoint(), changedOrder.getNotificationEndpoint())) {
 			orderChanged = true;
 			stateChangeOnly = false;
-			changedOrder.setNotificationEndpoint(changedOrder.getNotificationEndpoint());
+			modelOrder.setNotificationEndpoint(changedOrder.getNotificationEndpoint());
+		}
+
+		if ((modelOrder.getInputDataTimeoutPeriod() != null
+				&& !modelOrder.getInputDataTimeoutPeriod().equals(changedOrder.getInputDataTimeoutPeriod()))
+				|| (changedOrder.getInputDataTimeoutPeriod() != null
+						&& !changedOrder.getInputDataTimeoutPeriod().equals(modelOrder.getInputDataTimeoutPeriod()))) {
+			orderChanged = true;
+			modelOrder.setInputDataTimeoutPeriod(changedOrder.getInputDataTimeoutPeriod());
+		}
+		if (modelOrder.isOnInputDataTimeoutFail() != changedOrder.isOnInputDataTimeoutFail()) {
+			modelOrder.setOnInputDataTimeoutFail(changedOrder.isOnInputDataTimeoutFail());
+			orderChanged = true;
+		}
+		if (modelOrder.isAutoRelease() != changedOrder.isAutoRelease()) {
+			modelOrder.setAutoRelease(changedOrder.isAutoRelease());
+			orderChanged = true;
+		}
+		if (modelOrder.isAutoClose() != changedOrder.isAutoClose()) {
+			modelOrder.setAutoClose(changedOrder.isAutoClose());
+			orderChanged = true;
 		}
 
 		// Check for forbidden order data modifications

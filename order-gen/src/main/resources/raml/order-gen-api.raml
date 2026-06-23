@@ -1,0 +1,273 @@
+#%RAML 1.0
+title: prosEO EDIP Monitor REST Services
+version: v0.1
+protocols: [ HTTP, HTTPS ]
+baseUri: /proseo/order-gen/{version}
+mediaType: application/json
+
+securitySchemes:
+  basicAuth:
+    description: Each request must contain the headers necessary for
+                 basic authentication
+    type: Basic Authentication
+    describedBy:
+      headers:
+        Authorization:
+          description: Used to send the Base64-encoded "username:password"
+                       credentials
+          type: string
+      responses:
+        401:
+          description: |
+            Unauthorized. Either the provided username and password
+            combination is invalid, or the user is not allowed to access
+            the content provided by the requested URL.
+
+types:
+  RestClassOutputParameter: !include ../../../../../model/src/main/resources/raml/types/classoutputparameter.raml
+  RestInputFilter: !include ../../../../../model/src/main/resources/raml/types/inputfilter.raml
+  RestInputReference: !include ../../../../../model/src/main/resources/raml/types/inputreference.raml
+  RestJob: !include ../../../../../model/src/main/resources/raml/types/job.raml
+  RestJobStep: !include ../../../../../model/src/main/resources/raml/types/jobstep.raml
+  RestNotificationEndpoint: !include ../../../../../model/src/main/resources/raml/types/notificationendpoint.raml
+  RestOrbit: !include ../../../../../model/src/main/resources/raml/types/orbit.raml
+  RestOrbitQuery: !include ../../../../../model/src/main/resources/raml/types/orbitquery.raml
+  RestOrder: !include ../../../../../model/src/main/resources/raml/types/order.raml
+  RestParameter: !include ../../../../../model/src/main/resources/raml/types/parameter.raml
+  RestTrigger: !include ../../../../../model/src/main/resources/raml/types/trigger.raml
+
+
+resourceTypes:
+  standard:
+    get?:
+      responses:
+        403:
+          description: A cross-mission data access was attempted.
+          headers:
+            Warning: !include types/error.raml
+        404:
+          description: The requested resource was not found.
+          headers:
+            Warning: !include types/error.raml
+    put?:
+      responses:
+        400:
+          description: The request sent to the server contains data which is not as expected e.g. invalid location URI
+          headers:
+            Warning: !include types/error.raml
+        403:
+          description: A cross-mission data access was attempted.          
+          headers:
+            Warning: !include types/error.raml
+        404:
+          description: The requested resource was not found.
+          headers:
+            Warning: !include types/error.raml
+    post?:
+      responses:
+        400:
+          description: The request sent to the server contains data which is not as expected e.g. invalid location URI
+          headers:
+            Warning: !include types/error.raml
+        403:
+          description: A cross-mission data access was attempted.          
+          headers:
+            Warning: !include types/error.raml  
+    patch?:
+      responses:
+        400:
+          description: The request sent to the server contains data which is not as expected e.g. invalid location URI
+          headers:
+            Warning: !include types/error.raml
+        403:
+          description: A cross-mission data access was attempted.
+          headers:
+            Warning: !include types/error.raml
+        404:
+          description: The requested resource was not found                     
+          headers:
+            Warning: !include types/error.raml
+        409:
+          description: A concurrent modification was attempted.
+          headers:
+            Warning: !include types/error.raml
+    delete?:
+      responses:
+        304:
+          description: The resource could not be deleted.
+          headers:
+            Warning: !include types/error.raml
+        403:
+          description: A cross-mission data access was attempted.          
+          headers:
+            Warning: !include types/error.raml
+        404:
+          description: The requested resource to delete was not found.
+          headers:
+            Warning: !include types/error.raml
+              
+/triggers:
+  type: standard
+  get:
+    description: |
+      List of triggers filtered by mission, name, type, orderTemplate, inputProductClass, outputProductClass
+    displayName: getTriggers
+    queryParameters:
+      mission?: 
+        description: the mission code
+        type: string
+      name?: 
+        description: the unique name
+        type: string
+      type?: 
+        description: the trigger type
+        type: string
+      orderTemplate?:
+        description: the trigger orderTemplate
+        type: string
+      inputProductClass?:
+        description: the trigger orderTemplate input product class
+        type: string
+      outputProductClass?:
+        description: the trigger orderTemplate output product class
+        type: string
+      recordFrom?: 
+        type: integer
+        format: int32
+        description: first record of filtered and ordered result to return
+      recordTo?:
+        type: integer
+        format: int32
+        description: last record of filtered and ordered result to return
+      orderBy?:
+        type: string[]
+        description: an array of strings containing a column name and an optional sort direction (ASC/DESC), separated by white space
+    responses:
+      200:
+        body:
+          application/json:
+            type: RestTrigger[]
+            example: !include ../../../../../model/src/main/resources/raml/examples/trigger-list.json
+  post:
+    description: |
+      Create a trigger from the given JSON object
+    displayName: createTrigger
+    body:
+      application/json:
+        type: RestTrigger
+        example: !include ../../../../../model/src/main/resources/raml/examples/trigger.json
+    responses:
+      201:
+        body:
+          application/json:
+            type: RestTrigger
+            example: !include ../../../../../model/src/main/resources/raml/examples/trigger.json
+  patch:
+    description: |
+      Update a trigger from the given JSON object
+    displayName: updateTrigger
+    body:
+      application/json:
+        type: RestTrigger
+        example: !include ../../../../../model/src/main/resources/raml/examples/trigger.json
+    responses:
+      201:
+        body:
+          application/json:
+            type: RestTrigger
+            example: !include ../../../../../model/src/main/resources/raml/examples/trigger.json
+  delete:
+    description: |
+      Delete all triggers filtered by mission, name, type
+    displayName: deleteTrigger
+    queryParameters:
+      mission: 
+        description: the mission code
+        type: string
+      name: 
+        description: the unique name
+        type: string
+      type: 
+        description: the trigger type
+        type: string
+    responses:
+      204:
+  /count:
+    get:
+      description: |
+        count the triggers filtered by mission, name, type, orderTemplate, inputProductClass, outputProductClass
+      displayName: countTriggers
+      queryParameters:
+        mission?: 
+          description: the mission code
+          type: string
+        name?: 
+          description: the unique name
+          type: string
+        type?: 
+          description: the trigger type
+          type: string
+        orderTemplate?:
+          description: the trigger orderTemplate
+          type: string
+        inputProductClass?:
+          description: the trigger orderTemplate input product class
+          type: string
+        outputProductClass?:
+          description: the trigger orderTemplate output product class
+          type: string
+      responses:
+        200:
+          body:
+            text/plain:
+  /byproducttype:
+    type: standard
+    get:
+      description: |
+        Get all data driven triggers for order templates having the given product class as input product class
+      displayName: getByProductType
+      queryParameters:
+        mission: 
+          description: the mission code
+          type: string
+        productType:
+          description: The product type of the requested product class
+          type: string
+      responses:
+        200:
+          body:
+            application/json:
+              type: RestTrigger[]
+              example: !include ../../../../../model/src/main/resources/raml/examples/trigger-list.json
+        
+  /reload:
+    type: standard
+    get:
+      description: |
+        Stop triggers, reload them from database and start again.
+      displayName: reloadTriggers
+      queryParameters:
+        mission?: 
+          description: the mission code
+          type: string
+      responses:
+        200:
+            
+/generator:
+  type: standard
+  /forProduct/{productId}:
+    type: standard
+    uriParameters:
+      productId:
+        description: Database ID of the input product to use for order generation
+        type: integer
+    post:
+      description: |
+        Fire a data-driven trigger to generate a processing order from the given input product
+      displayName: generateForProduct
+      responses:
+        201:
+          body:
+            application/json:
+              type: RestOrder[]
+              example: !include ../../../../../model/src/main/resources/raml/examples/order-list.json
